@@ -18,7 +18,7 @@ performance, tyre strategy, weather, etc.).
 ├── feature_engineering.py    ← turns raw laps into driver‑race features
 ├── engineered_features.csv   ← output feature table
 ├── gp_predictor.py           ← trains, benchmarks and predicts GP results
-├── qualifying_*.csv          ← minimal quali sheets (Driver, LapTime [,No])
+├── qualifying_*.csv          ← minimal quali sheets (driver, q1 time, q2 time, q3 time, start grid position)
 └── cache/                    ← FastF1 disk cache
 ```
 
