@@ -43,7 +43,7 @@ graph TD
     A[data_collection.py] --> B(race_data_full.csv)
     B --> C[feature_engineering.py]
     C --> D(engineered_features.csv)
-    D --> E(gp_predictor.py (trains + predicts))
+    D --> E(gp_predictor.py ← trains + predicts)
 ```
 
 ### 3.1 Download / refresh raw data
