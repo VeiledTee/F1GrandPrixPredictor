@@ -19,13 +19,13 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 ###############################################################################
 # CONFIG
 ###############################################################################
-FEATURE_CSV  = "engineered_features.csv"
-TARGET_COL   = "race_avg_lap"
-ID_COLS      = ["driver", "team", "year", "round", "final_position", "winner"]
-RANDOM_SEED  = 42
-CV_FOLDS     = 5
-N_ITER_GBR   = 50      # # random combos for GBR
-N_ITER_MLP   = 40      # # random combos for MLP
+FEATURE_CSV = "engineered_features.csv"
+TARGET_COL = "race_avg_lap"
+ID_COLS = ["driver", "team", "year", "round", "final_position", "winner"]
+RANDOM_SEED = 42
+CV_FOLDS = 5
+N_ITER_GBR = 50  # # random combos for GBR
+N_ITER_MLP = 40  # # random combos for MLP
 ###############################################################################
 
 
@@ -52,13 +52,13 @@ def load_training_data(path=FEATURE_CSV):
 def build_gbr():
     base = GradientBoostingRegressor(random_state=RANDOM_SEED)
     param_dist = {
-        "n_estimators":   np.arange(100, 2600, 100),
-        "learning_rate":  np.linspace(0.01, 0.15, 50),
-        "max_depth":      np.arange(3, 11),
+        "n_estimators": np.arange(100, 2600, 100),
+        "learning_rate": np.linspace(0.01, 0.15, 50),
+        "max_depth": np.arange(3, 11),
         "min_samples_split": np.arange(2, 16),
-        "min_samples_leaf":  np.arange(1, 11),
-        "subsample":      np.linspace(0.6, 2.0, 50),
-        "max_features":   ["sqrt", "log2", None],
+        "min_samples_leaf": np.arange(1, 11),
+        "subsample": np.linspace(0.6, 1.0, 20),
+        "max_features": ["sqrt", "log2", None],
     }
     return RandomizedSearchCV(
         base,
@@ -138,7 +138,7 @@ def fit_and_report(name, model, X_tr, X_te, y_tr, y_te, feature_names, means):
     return name, mae, r2, out_path
 
 
-def main(args):
+def main(quali_csv: str = ""):
     X, y = load_training_data()
     means = X.mean(numeric_only=True).to_dict()
 
@@ -146,7 +146,7 @@ def main(args):
         X, y, test_size=0.2, random_state=RANDOM_SEED
     )
 
-    print("Model      |  Test‑set metrics")
+    print("Model      |  Test set metrics")
     print("-" * 40)
     results = []
     for name, builder in [
@@ -172,10 +172,10 @@ def main(args):
     print("\nSummary:")
     print(pd.DataFrame(results, columns=["Model", "MAE (s)", "R²", "File"]))
 
-    if args.quali_csv:
-        print("\n--- Inference using best‑MAE model ---")
+    if quali_csv:
+        print("\n--- Inference using best-MAE model ---")
         best_name = min(results, key=lambda r: r[1])[0].lower()
-        predict_with_best(best_name, args.quali_csv)
+        predict_with_best(best_name, quali_csv)
 
 
 # --------------------------------------------------------------------------- #
@@ -184,17 +184,28 @@ def main(args):
 def _build_feature_frame(q, meta, drv_col, lap_col):
     feats = pd.DataFrame(columns=meta["feature_names"])
 
+    if "start_grid" in feats.columns and "start_grid" in q.columns:
+        feats["start_grid"] = pd.to_numeric(q["start_grid"], errors="coerce")
+
     # quali time supplied by the user
     if "best_quali_time" in feats.columns:
-        feats["best_quali_time"] = pd.to_numeric(q[lap_col], errors="coerce")
+        if {"q1", "q2", "q3"}.issubset(q.columns):
+            feats["best_quali_time"] = (
+                q[["q1", "q2", "q3"]].apply(pd.to_numeric, errors="coerce").min(axis=1)
+            )
+        elif lap_col and "best_quali_time" in feats.columns:
+            feats["best_quali_time"] = pd.to_numeric(q[lap_col], errors="coerce")
 
     # season‑average pos delta from engineered CSV if available
     if "season_avg_pos_delta" in feats.columns:
-        season_table = pd.read_csv(FEATURE_CSV)[["driver", "year", "season_avg_pos_delta"]]
-        latest_year   = season_table["year"].max()          # 2025 in your use‑case
+        season_table = pd.read_csv(FEATURE_CSV)[
+            ["driver", "year", "season_avg_pos_delta"]
+        ]
+        latest_year = season_table["year"].max()  # 2025 in your use‑case
         lookup = (
             season_table[season_table["year"] == latest_year]
-            .set_index("driver")["season_avg_pos_delta"]
+            .groupby("driver", as_index=True)["season_avg_pos_delta"]
+            .mean()
         )
         feats["season_avg_pos_delta"] = q[drv_col].map(lookup)
 
@@ -205,28 +216,35 @@ def _build_feature_frame(q, meta, drv_col, lap_col):
 
 
 def predict_with_best(best_tag, quali_csv):
-    reg  = joblib.load(f"{best_tag}_model.pkl")
+    reg = joblib.load(f"{best_tag}_model.pkl")
     meta = joblib.load(f"{best_tag}_meta.pkl")
 
     q = pd.read_csv(quali_csv)
-    cols    = {c.lower().strip(): c for c in q.columns}
-    drv_col = next((cols[k] for k in cols if k in {"driver", "driver_abbreviation", "abbr"}), None)
-    lap_col = next((cols[k] for k in cols if k.startswith("qualifying") or "lap" in k), None)
-
+    cols = {c.lower().strip(): c for c in q.columns}
+    drv_col = next(
+        (cols[k] for k in cols if k in {"driver", "driver_abbreviation", "abbr"}), None
+    )
+    lap_col = next(
+        (
+            cols[k]
+            for k in cols
+            if (
+                k.startswith("qualifying")
+                or "lap" in k
+                or k in {"q1", "q2", "q3", "best_quali_time"}
+            )
+        ),
+        None,
+    )
     X_inf = _build_feature_frame(q, meta, drv_col, lap_col)
     q["PredRaceTime (s)"] = reg.predict(X_inf)
-    print(q[[drv_col, "PredRaceTime (s)"]].sort_values("PredRaceTime (s)"))
+    q["PredRacePos"] = q["PredRaceTime (s)"].rank(
+        method="first"
+    )  # 1 = predicted winner
+    q = q.sort_values("PredRacePos")
+    print(q[[drv_col, "PredRaceTime (s)"]])
 
 
-# --------------------------------------------------------------------------- #
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Compare GBR, Lasso & MLPRegressor on lap‑time prediction."
-    )
-    parser.add_argument(
-        "--quali_csv",
-        type=str,
-        help="Minimal quali CSV → predict with best model",
-        default=None,
-    )
-    main(parser.parse_args())
+    qualifying_csv_file: str = "qualifying_saudi.csv"
+    main(qualifying_csv_file)
