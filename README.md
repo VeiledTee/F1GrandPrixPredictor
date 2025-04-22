@@ -43,7 +43,7 @@ graph TD
     A[data_collection.py] --> B(race_data_full.csv)
     B --> C[feature_engineering.py]
     C --> D(engineered_features.csv)
-    D --> E(gp_predictor.py ← trains + predicts)
+    D --> E(gp_predictor.py (trains + predicts))
 ```
 
 ### 3.1 Download / refresh raw data
@@ -60,15 +60,15 @@ python feature_engineering.py --mini-q qualifying_saudi.csv --year 2025 --round 
 
 ### 3.3 Train, benchmark, and predict
 ```bash
-python gp_predictor.py  # training + metrics only
-python gp_predictor.py --quali_csv qualifying_saudi.csv  # training + metrics + prediction
+python lap_time_predictor.py  # training + metrics only
+python lap_time_predictor.py --quali_csv qualifying_saudi.csv  # training + metrics + prediction
 ```
 
-`qualifying_saudi.csv` needs only Driver, Driver No., and fastest recorded qualifying lap time:
+`qualifying_saudi.csv` needs only `driver`, `q1` lap time, `q2` lap time, `q3` lap time, and starting grid position (`start_grid`)
 ```csv
-Driver,No,LapTime
-Max Verstappen,1,87.294
-Oscar Piastri,81,87.304
+driver,q1,q2,q3,start_grid
+Max Verstappen,87.778,87.529,87.294,1
+Oscar Piastri,87.901,87.545,87.304,2
 ...
 ```
 The script auto‑fills **`season_avg_pos_delta`** - how much a driver's final placement changes from grid placement - from the latest engineered CSV.
